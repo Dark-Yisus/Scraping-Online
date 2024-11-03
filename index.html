@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buscador de Productos MercadoLibre</title>
+    <title>Buscador de Productos en MercadoLibre</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
         .loading {
@@ -17,15 +17,15 @@
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
         <div class="max-w-4xl mx-auto">
-            <h1 class="text-3xl font-bold text-center mb-8 text-blue-600">Buscador de Productos MercadoLibre</h1>
+            <h1 class="text-3xl font-bold text-center mb-8 text-blue-600">Buscador de Productos en MercadoLibre</h1>
             
-            <!-- Search Form -->
+            <!-- Formulario de búsqueda -->
             <form id="searchForm" class="mb-8">
                 <div class="flex gap-4">
                     <input 
                         type="text" 
                         id="producto" 
-                        placeholder="Ingrese el nombre del producto" 
+                        placeholder="¿Qué producto estás buscando?" 
                         class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                     >
@@ -38,22 +38,22 @@
                 </div>
             </form>
 
-            <!-- Loading Spinner -->
+            <!-- Indicador de carga -->
             <div id="loading" class="loading text-center py-8">
                 <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
-                <p class="mt-2 text-gray-600">Buscando productos...</p>
+                <p class="mt-2 text-gray-600">Buscando productos, por favor espere...</p>
             </div>
 
-            <!-- Results Section -->
+            <!-- Sección de resultados -->
             <div id="results" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
 
-            <!-- Download Excel Button -->
+            <!-- Botón de descarga Excel -->
             <div id="downloadSection" class="mt-8 text-center hidden">
                 <button 
                     id="downloadExcel" 
                     class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors"
                 >
-                    Descargar Excel
+                    Descargar Resultados en Excel
                 </button>
             </div>
         </div>
@@ -61,6 +61,7 @@
 
     <script>
         let lastSearchResults = null;
+        const API_BASE_URL = 'https://mercado-scraping.shop';
 
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -69,43 +70,63 @@
             const loadingDiv = document.getElementById('loading');
             const downloadSection = document.getElementById('downloadSection');
 
-            // Show loading, hide results
+            // Mostrar carga, ocultar resultados
             loadingDiv.classList.add('active');
             resultsDiv.innerHTML = '';
             downloadSection.classList.add('hidden');
 
             try {
-                const response = await fetch('https://mercado-scraping.shop/mercadolibre', {
+                console.log('Iniciando búsqueda para:', producto);
+                
+                const response = await fetch(`${API_BASE_URL}/mercadolibre`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Origin': window.location.origin
                     },
+                    credentials: 'include',
                     body: JSON.stringify({ producto })
                 });
 
+                console.log('Estado de la respuesta:', response.status);
+                
                 if (!response.ok) {
-                    throw new Error('Error en la búsqueda');
+                    const errorText = await response.text();
+                    console.error('Respuesta de error completa:', errorText);
+                    throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
                 }
 
                 const data = await response.json();
-                lastSearchResults = data; // Save results for Excel download
+                console.log('Datos recibidos:', data);
+                
+                lastSearchResults = data;
 
-                // Display results
+                if (!data.datos || data.datos.length === 0) {
+                    resultsDiv.innerHTML = `
+                        <div class="col-span-full text-center text-gray-600 py-4">
+                            No se encontraron productos para tu búsqueda. Intenta con otros términos.
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Mostrar resultados
                 data.datos.forEach(producto => {
                     const card = createProductCard(producto);
                     resultsDiv.appendChild(card);
                 });
 
-                // Show download button if we have results
-                if (data.datos.length > 0) {
-                    downloadSection.classList.remove('hidden');
-                }
+                // Mostrar botón de descarga
+                downloadSection.classList.remove('hidden');
 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error detallado:', error);
                 resultsDiv.innerHTML = `
                     <div class="col-span-full text-center text-red-600 py-4">
-                        Error al buscar productos: ${error.message}
+                        <p class="font-bold mb-2">Error al buscar productos:</p>
+                        <p>${error.message}</p>
+                        <p class="text-sm mt-2">Por favor, verifica tu conexión e intenta nuevamente.</p>
                     </div>
                 `;
             } finally {
@@ -120,14 +141,17 @@
                 const formData = new FormData();
                 formData.append('data', JSON.stringify(lastSearchResults));
 
-                const response = await fetch('https://mercado-scraping.shop/descargarExcel', {
+                const response = await fetch(`${API_BASE_URL}/descargarExcel`, {
                     method: 'POST',
+                    credentials: 'include',
                     body: formData
                 });
 
-                if (!response.ok) throw new Error('Error al descargar Excel');
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error al descargar: ${errorText}`);
+                }
 
-                // Create blob and download
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -139,8 +163,8 @@
                 a.remove();
 
             } catch (error) {
-                console.error('Error downloading Excel:', error);
-                alert('Error al descargar el archivo Excel');
+                console.error('Error al descargar Excel:', error);
+                alert(`Error al descargar Excel: ${error.message}`);
             }
         });
 
@@ -148,33 +172,33 @@
             const div = document.createElement('div');
             div.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow';
             
-            // Format price strings
             const precioOriginal = producto.precio_original !== 'N/A' ? 
-                `<p class="text-gray-500 line-through">${producto.precio_original}</p>` : '';
+                `<p class="text-gray-500 line-through">Precio original: ${producto.precio_original}</p>` : '';
             
             div.innerHTML = `
                 <div class="flex flex-col h-full">
                     <img src="${producto.imagenes}" alt="${producto.titulo}" 
-                        class="w-full h-48 object-contain mb-4">
+                        class="w-full h-48 object-contain mb-4"
+                        onerror="this.src='https://via.placeholder.com/300x300?text=Imagen+no+disponible'">
                     <h3 class="text-lg font-semibold mb-2">${producto.titulo}</h3>
                     <div class="flex-grow">
                         <div class="mb-2">
                             ${precioOriginal}
                             <p class="text-xl font-bold text-blue-600">
-                                ${producto.precio_con_descuento}
+                                Precio actual: ${producto.precio_con_descuento}
                             </p>
                             ${producto.descuento !== 'N/A' ? 
-                                `<p class="text-green-600">${producto.descuento}</p>` : ''}
+                                `<p class="text-green-600">¡${producto.descuento} de descuento!</p>` : ''}
                         </div>
                         <p class="text-sm text-gray-600">Vendedor: ${producto.vendedor}</p>
-                        <p class="text-sm text-gray-600">Cuotas: ${producto.cuotas}</p>
+                        <p class="text-sm text-gray-600">Disponible en: ${producto.cuotas}</p>
                         <p class="text-sm text-gray-600">Envío: ${producto.envios}</p>
                         ${producto.cantidad_vendida !== 'N/A' ? 
-                            `<p class="text-sm text-gray-600">${producto.cantidad_vendida} vendidos</p>` : ''}
+                            `<p class="text-sm text-gray-600">${producto.cantidad_vendida} unidades vendidas</p>` : ''}
                     </div>
                     <a href="${producto.url_producto}" target="_blank" 
                         class="mt-4 text-blue-600 hover:text-blue-800 text-sm">
-                        Ver en MercadoLibre →
+                        Ver detalles en MercadoLibre →
                     </a>
                 </div>
             `;
